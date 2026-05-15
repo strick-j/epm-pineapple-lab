@@ -1,0 +1,33 @@
+# Copy this file to terraform.tfvars and fill in your real values.
+# terraform.tfvars is gitignored.
+
+aws_region    = "us-east-1"
+vpc_id        = "vpc-0123456789abcdef0"
+subnet_id     = "subnet-0123456789abcdef0"
+key_pair_name = "epm-lab-key"
+
+rhel_major_version  = "9"
+instance_type       = "t3.medium"
+root_volume_size_gb = 30
+root_volume_type    = "gp3"
+
+instance_names = [
+  "epm-rhel-01",
+  "epm-rhel-02",
+  "epm-rhel-03",
+]
+
+# CIDRs allowed inbound on port 22 (and any extra_ingress_ports).
+# Do not use 0.0.0.0/0 unless you really mean it.
+ingress_cidrs       = ["10.0.0.0/8"]
+extra_ingress_ports = []
+
+common_tags = {
+  Project     = "epm-pineapple-lab"
+  Environment = "lab"
+  Owner       = "strick-j"
+  ManagedBy   = "terraform"
+}
+
+# Leave empty for a plain RHEL boot, or set to e.g. file("./cloud-init.yaml")
+user_data = ""
