@@ -41,7 +41,6 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   from_port         = 22
   to_port           = 22
   ip_protocol       = "tcp"
-  tags              = var.common_tags
 }
 
 resource "aws_vpc_security_group_ingress_rule" "extra" {
@@ -55,14 +54,12 @@ resource "aws_vpc_security_group_ingress_rule" "extra" {
   from_port         = each.value.port
   to_port           = each.value.port
   ip_protocol       = "tcp"
-  tags              = var.common_tags
 }
 
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.rhel.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
-  tags              = var.common_tags
 }
 
 resource "aws_instance" "rhel" {
@@ -72,16 +69,54 @@ resource "aws_instance" "rhel" {
   instance_type               = var.instance_type
   subnet_id                   = var.subnet_id
   vpc_security_group_ids      = concat([aws_security_group.rhel.id], var.extra_security_group_ids)
-  key_name                    = var.key_pair_name
   iam_instance_profile        = var.iam_instance_profile
+  key_name                    = var.key_pair_name
   associate_public_ip_address = false
-  user_data                   = var.user_data
+
+  user_data = <<-EOF
+#!/bin/bash -xe
+
+yum update -y
+yum install -y aws-cli
+
+# Export variables for scripts
+export IDENTITY_TENANT_ID="${var.identity_tenant_id}"
+export PLATFORM_TENANT_NAME="${var.platform_tenant_name}"
+export WORKSPACE_ID="${var.workspace_id}"
+export WORKSPACE_TYPE="${var.workspace_type}"
+export AWS_ROLE_NAME="${var.aws_role_name}"
+export SERVICE_ID="${var.service_id}"
+export HOST_ID="${var.host_id}"
+export USERNAME_VARIABLE="${var.username_variable}"
+export PASSWORD_VARIABLE="${var.password_variable}"
+
+SSHD_DIR=/var/run/sshd
+SCRIPTS_DIR=/opt/sia
+mkdir -p "$SCRIPTS_DIR"
+mkdir -p "$SSHD_DIR"
+
+aws s3 cp s3://${var.s3_bucket_name}/scripts "$SCRIPTS_DIR" --recursive
+
+# make scripts executable
+chmod +x "$SCRIPTS_DIR"/*.sh
+
+# run them
+"$SCRIPTS_DIR/01_init.sh" "${each.key}"
+"$SCRIPTS_DIR/02_configure_target.sh"
+EOF
 
   root_block_device {
     volume_size           = var.root_volume_size_gb
     volume_type           = var.root_volume_type
     encrypted             = true
     delete_on_termination = true
+  }
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
   }
 
   tags = merge(
