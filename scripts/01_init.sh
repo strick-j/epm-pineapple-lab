@@ -114,23 +114,25 @@ else
     exit 1
 fi
 
-# Update /etc/hosts to ensure proper hostname resolution
-# Preserve existing entries and update/add the hostname entry
+# Update /etc/hosts to ensure proper hostname resolution.
+# RHEL convention: hostname is appended as an alias on the existing 127.0.0.1
+# line (the Debian/Ubuntu 127.0.1.1 convention is not used on RHEL).
 log "Updating /etc/hosts..."
-if grep -q "127.0.1.1" /etc/hosts; then
-    # Update existing 127.0.1.1 entry
-    if sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$NEW_HOSTNAME/" /etc/hosts; then
-        log "Updated existing 127.0.1.1 entry in /etc/hosts"
+if grep -qE "^127\.0\.0\.1[[:space:]].*(^|[[:space:]])${NEW_HOSTNAME}([[:space:]]|$)" /etc/hosts; then
+    log "${NEW_HOSTNAME} already present on the 127.0.0.1 line; /etc/hosts unchanged"
+elif grep -qE "^127\.0\.0\.1[[:space:]]" /etc/hosts; then
+    if sed -i -E "/^127\.0\.0\.1[[:space:]]/ s/\$/ ${NEW_HOSTNAME}/" /etc/hosts; then
+        log "Appended ${NEW_HOSTNAME} to the 127.0.0.1 line in /etc/hosts"
     else
         log_error "Failed to update /etc/hosts"
         exit 1
     fi
 else
-    # Add new entry after localhost
-    if sed -i "/^127\.0\.0\.1/a 127.0.1.1\t$NEW_HOSTNAME" /etc/hosts; then
-        log "Added new 127.0.1.1 entry to /etc/hosts"
+    # No 127.0.0.1 line at all (very unusual on RHEL) — create one.
+    if echo "127.0.0.1 localhost ${NEW_HOSTNAME}" >> /etc/hosts; then
+        log "Created 127.0.0.1 line with ${NEW_HOSTNAME} in /etc/hosts"
     else
-        log_error "Failed to add entry to /etc/hosts"
+        log_error "Failed to write /etc/hosts"
         exit 1
     fi
 fi

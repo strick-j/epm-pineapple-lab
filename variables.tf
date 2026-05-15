@@ -182,12 +182,6 @@ variable "user_data" {
 }
 
 # CyberArk variables
-## SIA specific variables
-variable "connector_pool_name" {
-  description = "Name of the CyberArk SIA connector pool"
-  type        = string
-}
-
 variable "s3_bucket_name" {
   description = "Name of the S3 bucket where the scripts are located"
   type        = string
