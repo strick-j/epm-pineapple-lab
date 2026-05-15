@@ -6,7 +6,7 @@
 
 **Architecture:** Flat root module. `for_each` over a hostname list keyed by string so individual instances are addressable. Dynamic AMI lookup (Red Hat owner ID) with `ignore_changes = [ami]` so existing instances aren't replaced when Red Hat publishes a new RHEL. S3 backend with native locking (Terraform 1.10+).
 
-**Tech Stack:** Terraform `>= 1.10.0`, AWS provider `~> 5.0`, RHEL 8/9 (configurable), S3 backend with `use_lockfile = true`.
+**Tech Stack:** Terraform `>= 1.10.0`, AWS provider `~> 6.0`, RHEL 8/9 (configurable), S3 backend with `use_lockfile = true`.
 
 **Spec:** `docs/superpowers/specs/2026-05-15-rhel-aws-terraform-design.md`
 
@@ -75,7 +75,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.0"
     }
   }
 }
