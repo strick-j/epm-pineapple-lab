@@ -73,14 +73,15 @@ Only one AWS provider, region from tfvars. No nested modules; if a second fleet 
 | `ingress_cidrs` | list(string) | `[]` | CIDRs allowed inbound on port 22 (and any extras) |
 | `extra_ingress_ports` | list(number) | `[]` | Optional additional TCP ports |
 | `extra_security_group_ids` | list(string) | `[]` | Pre-existing SG IDs attached alongside the one this module creates |
-| `common_tags` | map(string) | `{}` | Applied to every taggable resource; expected to include `Project` |
+| `common_tags` | map(string) | `{}` | Applied to every taggable resource; must include `Project` and `I_Owner` |
+| `iam_instance_profile` | string | `null` | Pre-existing IAM instance profile name to attach (e.g., S3 access for `user_data`) |
 | `user_data` | string | `""` | Optional cloud-init; passed verbatim if non-empty |
 
 **Validation rules in `variables.tf`:**
 - `rhel_major_version` must be `"8"` or `"9"`.
 - `instance_names` must contain unique values (prevents duplicate `for_each` keys).
 - `ingress_cidrs` entries must match a CIDR-shaped regex.
-- `common_tags` must include a `Project` key (used to name the security group).
+- `common_tags` must include a `Project` key (used to name the security group) and an `I_Owner` key.
 
 ### `terraform.tfvars.example` (committed template)
 
@@ -189,6 +190,7 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   from_port         = 22
   to_port           = 22
   ip_protocol       = "tcp"
+  tags              = var.common_tags
 }
 
 resource "aws_vpc_security_group_ingress_rule" "extra" {
@@ -201,12 +203,14 @@ resource "aws_vpc_security_group_ingress_rule" "extra" {
   from_port         = each.value.port
   to_port           = each.value.port
   ip_protocol       = "tcp"
+  tags              = var.common_tags
 }
 
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.rhel.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
+  tags              = var.common_tags
 }
 ```
 
@@ -221,6 +225,7 @@ resource "aws_instance" "rhel" {
   subnet_id                   = var.subnet_id
   vpc_security_group_ids      = concat([aws_security_group.rhel.id], var.extra_security_group_ids)
   key_name                    = var.key_pair_name
+  iam_instance_profile        = var.iam_instance_profile
   associate_public_ip_address = false
   user_data                   = var.user_data
 
