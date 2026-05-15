@@ -72,6 +72,7 @@ Only one AWS provider, region from tfvars. No nested modules; if a second fleet 
 | `instance_names` | list(string) | `[]` | One EC2 per element; must be unique |
 | `ingress_cidrs` | list(string) | `[]` | CIDRs allowed inbound on port 22 (and any extras) |
 | `extra_ingress_ports` | list(number) | `[]` | Optional additional TCP ports |
+| `extra_security_group_ids` | list(string) | `[]` | Pre-existing SG IDs attached alongside the one this module creates |
 | `common_tags` | map(string) | `{}` | Applied to every taggable resource; expected to include `Project` |
 | `user_data` | string | `""` | Optional cloud-init; passed verbatim if non-empty |
 
@@ -218,7 +219,7 @@ resource "aws_instance" "rhel" {
   ami                         = data.aws_ami.rhel.id
   instance_type               = var.instance_type
   subnet_id                   = var.subnet_id
-  vpc_security_group_ids      = [aws_security_group.rhel.id]
+  vpc_security_group_ids      = concat([aws_security_group.rhel.id], var.extra_security_group_ids)
   key_name                    = var.key_pair_name
   associate_public_ip_address = false
   user_data                   = var.user_data
