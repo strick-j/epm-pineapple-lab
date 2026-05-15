@@ -29,8 +29,13 @@ common_tags = {
   Project     = "epm-pineapple-lab"
   Environment = "lab"
   Owner       = "strick-j"
+  I_Owner     = "strick-j"
   ManagedBy   = "terraform"
 }
+
+# Name of a pre-existing IAM instance profile (e.g., for S3 access from user_data).
+# Leave null to attach none.
+iam_instance_profile = null
 
 # Leave empty for a plain RHEL boot, or set to e.g. file("./cloud-init.yaml")
 user_data = ""

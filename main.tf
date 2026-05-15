@@ -41,6 +41,7 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   from_port         = 22
   to_port           = 22
   ip_protocol       = "tcp"
+  tags              = var.common_tags
 }
 
 resource "aws_vpc_security_group_ingress_rule" "extra" {
@@ -54,12 +55,14 @@ resource "aws_vpc_security_group_ingress_rule" "extra" {
   from_port         = each.value.port
   to_port           = each.value.port
   ip_protocol       = "tcp"
+  tags              = var.common_tags
 }
 
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.rhel.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
+  tags              = var.common_tags
 }
 
 resource "aws_instance" "rhel" {
@@ -70,6 +73,7 @@ resource "aws_instance" "rhel" {
   subnet_id                   = var.subnet_id
   vpc_security_group_ids      = concat([aws_security_group.rhel.id], var.extra_security_group_ids)
   key_name                    = var.key_pair_name
+  iam_instance_profile        = var.iam_instance_profile
   associate_public_ip_address = false
   user_data                   = var.user_data
 

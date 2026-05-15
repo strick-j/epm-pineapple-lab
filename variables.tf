@@ -84,7 +84,7 @@ variable "extra_security_group_ids" {
 }
 
 variable "common_tags" {
-  description = "Tags applied to every taggable resource. Must include a \"Project\" key (used in the security group name)."
+  description = "Tags applied to every taggable resource. Must include \"Project\" (used in the security group name) and \"I_Owner\"."
   type        = map(string)
   default     = {}
 
@@ -92,6 +92,17 @@ variable "common_tags" {
     condition     = contains(keys(var.common_tags), "Project")
     error_message = "common_tags must include a \"Project\" key."
   }
+
+  validation {
+    condition     = contains(keys(var.common_tags), "I_Owner")
+    error_message = "common_tags must include an \"I_Owner\" key."
+  }
+}
+
+variable "iam_instance_profile" {
+  description = "Name of a pre-existing IAM instance profile to attach to every instance (e.g., for S3 access from user_data). Leave null to attach no profile."
+  type        = string
+  default     = null
 }
 
 variable "user_data" {
