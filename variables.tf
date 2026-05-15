@@ -20,23 +20,23 @@ variable "key_pair_name" {
 
 variable "team_name" {
   description = "Name of the team for tagging purposes"
-  type = string
+  type        = string
 }
 
 # Resource Tag Variables
 variable "asset_owner_name" {
   description = "Name of the human that the cloud team can contact with questions"
-  type = string
+  type        = string
 }
 
 variable "iScheduler" {
   description = "iScheduler tag value"
-  type = string
+  type        = string
 }
 
 variable "iCreator_CreatorBy" {
   description = "iCreator_CreatorBy tag value"
-  type = string
+  type        = string
 }
 
 # Generic variables for the CyberArk ISPSS Platform

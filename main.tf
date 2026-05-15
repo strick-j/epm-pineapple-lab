@@ -41,6 +41,7 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   from_port         = 22
   to_port           = 22
   ip_protocol       = "tcp"
+  tags              = var.common_tags
 }
 
 resource "aws_vpc_security_group_ingress_rule" "extra" {
@@ -54,12 +55,14 @@ resource "aws_vpc_security_group_ingress_rule" "extra" {
   from_port         = each.value.port
   to_port           = each.value.port
   ip_protocol       = "tcp"
+  tags              = var.common_tags
 }
 
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.rhel.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
+  tags              = var.common_tags
 }
 
 resource "aws_instance" "rhel" {
@@ -76,8 +79,17 @@ resource "aws_instance" "rhel" {
   user_data = <<-EOF
 #!/bin/bash -xe
 
-yum update -y
-yum install -y aws-cli
+# Security updates only — avoid pulling unrelated kernel/feature updates on first boot
+dnf update -y --security
+
+# Dependencies needed by /opt/sia/*.sh
+dnf install -y unzip jq
+
+# AWS CLI v2 (stock RHEL 9 repos don't ship an aws-cli package)
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/aws /tmp/awscliv2.zip
 
 # Export variables for scripts
 export IDENTITY_TENANT_ID="${var.identity_tenant_id}"
@@ -121,7 +133,13 @@ EOF
 
   tags = merge(
     var.common_tags,
-    { Name = each.key },
+    {
+      Name               = each.key
+      Team               = var.team_name
+      AssetOwner         = var.asset_owner_name
+      iScheduler         = var.iScheduler
+      iCreator_CreatorBy = var.iCreator_CreatorBy
+    },
   )
 
   # Don't replace running instances when Red Hat publishes a newer AMI.

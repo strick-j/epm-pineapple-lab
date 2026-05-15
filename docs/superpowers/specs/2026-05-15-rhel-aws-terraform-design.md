@@ -236,6 +236,13 @@ resource "aws_instance" "rhel" {
     delete_on_termination = true
   }
 
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
+  }
+
   tags = merge(
     var.common_tags,
     { Name = each.key },
@@ -246,6 +253,8 @@ resource "aws_instance" "rhel" {
   }
 }
 ```
+
+**Why `metadata_options`:** `http_tokens = "required"` forces IMDSv2 (session-token-based metadata access), blocking the unauthenticated IMDSv1 endpoint. `http_put_response_hop_limit = 1` keeps tokens scoped to the instance itself, so a compromised container on the host cannot relay credentials. `instance_metadata_tags = "enabled"` lets `user_data` and on-host scripts read instance tags from metadata without an AWS API call.
 
 **Why `ignore_changes = [ami]`:** without it, every apply after Red Hat publishes a new RHEL AMI would replace every running instance. New instances still get the latest AMI at creation time; existing instances stay put. To intentionally rebuild on the newest AMI, use `terraform apply -replace='aws_instance.rhel["<name>"]'`.
 

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 
 # Script to configure target for SIA connections.
 #   1. Obtains AWS credentials from environment variables
@@ -23,15 +24,15 @@ log_error() {
 
 # Helper functions for Signing Request
 sha256Hash() {
-  printf "$1" | openssl dgst -sha256 -binary -hex | sed 's/^.* //'
+  printf "%b" "$1" | openssl dgst -sha256 -binary -hex | sed 's/^.* //'
 }
 
 to_hex() {
-  printf "$1" | od -A n -t x1 | tr -d [:space:]
+  printf "%b" "$1" | od -A n -t x1 | tr -d '[:space:]'
 }
 
 hmac_sha256() {
-  printf "$2" | \
+  printf "%b" "$2" | \
     openssl dgst -binary -hex -sha256 -mac HMAC -macopt hexkey:"$1" | \
     sed 's/^.* //'
 }
@@ -88,7 +89,7 @@ validate_access_key() {
     log_error "Access Key must be exactly 20 chars (found ${#access_key})"
     exit 1
   fi
-s
+
   if [[ ! "$access_key" =~ ^(AKIA|ASIA)[A-Z0-9]{16}$ ]]; then
     log_error "Access Key format is invalid"
     log_error "  - Must start with AKIA (standard) or ASIA (temporary)"
@@ -147,19 +148,19 @@ validate_session_token() {
 
   if [[ -z "$token" ]]; then
     log "⚠ Session Token is empty (not required for standard credentials)"
-    exit 0
+    return 0
   fi
 
   # Token should be at least 100 characters
   if [[ ${#token} -lt 100 ]]; then
-    log "Session Token seems too short (found ${#token} characters)"
-    exit 1
+    log_error "Session Token seems too short (found ${#token} characters)"
+    return 1
   fi
 
   # Check if it's base64-like format
   if [[ ! "$token" =~ ^[A-Za-z0-9/+=]+$ ]]; then
     log_error "Session Token contains invalid characters"
-    exit 1
+    return 1
   fi
 
   log "✓ Session Token format is valid (${#token} characters)"
@@ -200,7 +201,7 @@ check_installation_completed() {
     
     # Check if file exists
     if [[ ! -f "$FILE" ]]; then
-        log_error "File '$file' not found"
+        log_error "File '$FILE' not found"
         return 1
     fi
     
@@ -407,17 +408,21 @@ USERNAME_API_ENDPOINT="${CONJUR_URL}/secrets/${CONJUR_ACCOUNT}"
 USERNAME_API_ENDPOINT+="/${CONJUR_KIND}/${ENCODED_USERNAME_VARIABLE}"
 
 log "Retrieving secret from Conjur Cloud..."
-# Retrieve the password
+# Retrieve the username
 USERNAME_VALUE=$(curl -sS -w "\n%{http_code}" \
-  -H "Authorization:Token token=\"${CONJUR_TOKEN}\"" \
+  -H "Authorization: Token token=\"${CONJUR_TOKEN}\"" \
   "${USERNAME_API_ENDPOINT}")
+USERNAME_HTTP_CODE=$(tail -n1 <<<"$USERNAME_VALUE")
+CLIENT_ID=$(sed '$d' <<<"$USERNAME_VALUE")
+http_response "$USERNAME_HTTP_CODE" "$CLIENT_ID"
+
+# Retrieve the password
 PASSWORD_VALUE=$(curl -sS -w "\n%{http_code}" \
   -H "Authorization: Token token=\"${CONJUR_TOKEN}\"" \
   "${PASSWORD_API_ENDPOINT}")
-
-# Extract secret value (everything except last line)
-CLIENT_ID=$(echo "$USERNAME_VALUE" | sed '$d')
-CLIENT_SECRET=$(echo "$PASSWORD_VALUE" | sed '$d')
+PASSWORD_HTTP_CODE=$(tail -n1 <<<"$PASSWORD_VALUE")
+CLIENT_SECRET=$(sed '$d' <<<"$PASSWORD_VALUE")
+http_response "$PASSWORD_HTTP_CODE" "$CLIENT_SECRET"
 
 log "Client ID Value: ${CLIENT_ID}"
 log "Client Secret Value: ${CLIENT_SECRET:0:8}..."
@@ -448,12 +453,15 @@ log "Parsed access_token: ${PLATFORM_TOKEN:0:50}..."
 SIA_API_URL="https://${PLATFORM_TENANT_NAME}.dpa.cyberark.cloud/api"
 CONFIGURE_TARGET_API_URL="${SIA_API_URL}/public-keys/scripts"
 log "Requesting setup script from ${CONFIGURE_TARGET_API_URL}"
-SETUP_RESPONSE=$(curl -sk -X GET "$CONFIGURE_TARGET_API_URL" \
+SETUP_RESPONSE=$(curl -sS -w "\n%{http_code}" -G "$CONFIGURE_TARGET_API_URL" \
   -H "Authorization: Bearer ${PLATFORM_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "workspaceId=${WORKSPACE_ID}" \
-  -d "workspaceType=${WORKSPACE_TYPE}"
+  -H "Accept: application/json" \
+  --data-urlencode "workspaceId=${WORKSPACE_ID}" \
+  --data-urlencode "workspaceType=${WORKSPACE_TYPE}"
 )
+SETUP_HTTP_CODE=$(tail -n1 <<<"$SETUP_RESPONSE")
+SETUP_RESPONSE=$(sed '$d' <<<"$SETUP_RESPONSE")
+http_response "$SETUP_HTTP_CODE" "$SETUP_RESPONSE"
 
 # Decode the Base64 payload into bash_cmd
 base64_payload=$(jq -r '.base64_cmd' <<<"$SETUP_RESPONSE")

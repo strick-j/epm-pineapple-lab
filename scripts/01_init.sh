@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Script to set hostname on Ubuntu 24.04
+# Script to set hostname on RHEL 9
 # Usage: ./01_init.sh <new-hostname> [--force]
 
 # ---------------------------------------------------------
@@ -49,7 +49,6 @@ for arg in "$@"; do
     case $arg in
         --force)
             FORCE=true
-            shift
             ;;
         *)
             if [ -z "$NEW_HOSTNAME" ]; then
