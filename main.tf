@@ -4,8 +4,8 @@ provider "aws" {
 
 # Latest RHEL AMI published by Red Hat (owner ID 309956199498).
 # Re-runs of `terraform apply` after Red Hat releases a new AMI will not
-# replace running instances because the aws_instance resource pins via
-# lifecycle.ignore_changes — see main.tf in Task 6.
+# replace running instances because aws_instance.rhel pins ami via
+# lifecycle.ignore_changes.
 data "aws_ami" "rhel" {
   most_recent = true
   owners      = ["309956199498"]
