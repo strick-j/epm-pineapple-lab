@@ -68,7 +68,7 @@ resource "aws_instance" "rhel" {
   ami                         = data.aws_ami.rhel.id
   instance_type               = var.instance_type
   subnet_id                   = var.subnet_id
-  vpc_security_group_ids      = [aws_security_group.rhel.id]
+  vpc_security_group_ids      = concat([aws_security_group.rhel.id], var.extra_security_group_ids)
   key_name                    = var.key_pair_name
   associate_public_ip_address = false
   user_data                   = var.user_data

@@ -77,6 +77,12 @@ variable "extra_ingress_ports" {
   default     = []
 }
 
+variable "extra_security_group_ids" {
+  description = "IDs of pre-existing security groups to attach to every instance, alongside the SG this module creates."
+  type        = list(string)
+  default     = []
+}
+
 variable "common_tags" {
   description = "Tags applied to every taggable resource. Must include a \"Project\" key (used in the security group name)."
   type        = map(string)

@@ -22,6 +22,9 @@ instance_names = [
 ingress_cidrs       = ["10.0.0.0/8"]
 extra_ingress_ports = []
 
+# Pre-existing security group IDs to attach alongside the one this module creates.
+extra_security_group_ids = []
+
 common_tags = {
   Project     = "epm-pineapple-lab"
   Environment = "lab"
