@@ -61,3 +61,35 @@ resource "aws_vpc_security_group_egress_rule" "all" {
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
+
+resource "aws_instance" "rhel" {
+  for_each = toset(var.instance_names)
+
+  ami                         = data.aws_ami.rhel.id
+  instance_type               = var.instance_type
+  subnet_id                   = var.subnet_id
+  vpc_security_group_ids      = [aws_security_group.rhel.id]
+  key_name                    = var.key_pair_name
+  associate_public_ip_address = false
+  user_data                   = var.user_data
+
+  root_block_device {
+    volume_size           = var.root_volume_size_gb
+    volume_type           = var.root_volume_type
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  tags = merge(
+    var.common_tags,
+    { Name = each.key },
+  )
+
+  # Don't replace running instances when Red Hat publishes a newer AMI.
+  # New instances still get the latest AMI at creation time. To rebuild
+  # an instance on the newest AMI:
+  #   terraform apply -replace='aws_instance.rhel["<name>"]'
+  lifecycle {
+    ignore_changes = [ami]
+  }
+}
