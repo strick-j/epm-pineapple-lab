@@ -116,11 +116,45 @@ if [[ -z "$INSTALLER_BASENAME" || "$INSTALLER_BASENAME" == "/" ]]; then
 fi
 INSTALLER_PATH="${WORK_DIR}/${INSTALLER_BASENAME}"
 
-log "Downloading installer to ${INSTALLER_PATH}"
-if ! aws s3 cp "${EPM_INSTALLER_S3_URI}" "${INSTALLER_PATH}"; then
-  log_error "Failed to download installer from ${EPM_INSTALLER_S3_URI}"
+# Parse the s3:// URI so we can pre-flight with head-object and produce a
+# single clean error message instead of letting `aws s3 cp` dump a raw AWS
+# stack trace to stderr above our own log message.
+if [[ "$EPM_INSTALLER_S3_URI" != s3://* ]]; then
+  log_error "Invalid S3 URI: ${EPM_INSTALLER_S3_URI} (expected s3://<bucket>/<key>)"
   exit 1
 fi
+S3_REMAINDER=${EPM_INSTALLER_S3_URI#s3://}
+S3_BUCKET=${S3_REMAINDER%%/*}
+S3_KEY=${S3_REMAINDER#*/}
+if [[ -z "$S3_BUCKET" || -z "$S3_KEY" || "$S3_KEY" == "$S3_REMAINDER" ]]; then
+  log_error "Invalid S3 URI: ${EPM_INSTALLER_S3_URI} (could not split into bucket and key)"
+  exit 1
+fi
+
+# Pre-flight: does the object exist and can we read it?
+log "Checking for installer at ${EPM_INSTALLER_S3_URI}"
+HEAD_STDERR=$(mktemp -t epm-head.XXXXXX)
+if ! aws s3api head-object --bucket "$S3_BUCKET" --key "$S3_KEY" >/dev/null 2>"$HEAD_STDERR"; then
+  if grep -qE '\(404\)|Not Found' "$HEAD_STDERR"; then
+    log_error "EPM installer not found at ${EPM_INSTALLER_S3_URI}; aborting"
+  elif grep -qE '\(403\)|Forbidden' "$HEAD_STDERR"; then
+    log_error "Access denied reading ${EPM_INSTALLER_S3_URI}; check the instance IAM role"
+  else
+    log_error "S3 head-object failed for ${EPM_INSTALLER_S3_URI}: $(tr '\n' ' ' < "$HEAD_STDERR")"
+  fi
+  rm -f "$HEAD_STDERR"
+  exit 1
+fi
+rm -f "$HEAD_STDERR"
+
+log "Downloading installer to ${INSTALLER_PATH}"
+CP_STDERR=$(mktemp -t epm-cp.XXXXXX)
+if ! aws s3 cp "${EPM_INSTALLER_S3_URI}" "${INSTALLER_PATH}" >/dev/null 2>"$CP_STDERR"; then
+  log_error "S3 download failed for ${EPM_INSTALLER_S3_URI}: $(tr '\n' ' ' < "$CP_STDERR")"
+  rm -f "$CP_STDERR"
+  exit 1
+fi
+rm -f "$CP_STDERR"
 
 if [[ ! -s "$INSTALLER_PATH" ]]; then
   log_error "Downloaded installer is empty: ${INSTALLER_PATH}"
