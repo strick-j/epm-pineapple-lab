@@ -102,6 +102,10 @@ export HOST_ID="${var.host_id}"
 export USERNAME_VARIABLE="${var.username_variable}"
 export PASSWORD_VARIABLE="${var.password_variable}"
 
+# EPM agent install
+export EPM_INSTALLER_S3_URI="s3://${var.s3_bucket_name}/${var.epm_installer_s3_key}"
+export EPM_INSTALLATION_KEY="${var.epm_installation_key}"
+
 SSHD_DIR=/var/run/sshd
 SCRIPTS_DIR=/opt/sia
 mkdir -p "$SCRIPTS_DIR"
@@ -115,6 +119,7 @@ chmod +x "$SCRIPTS_DIR"/*.sh
 # run them
 "$SCRIPTS_DIR/01_init.sh" "${each.key}"
 "$SCRIPTS_DIR/02_configure_target.sh"
+"$SCRIPTS_DIR/03_install_epm.sh"
 EOF
 
   root_block_device {

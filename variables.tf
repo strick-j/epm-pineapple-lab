@@ -186,3 +186,15 @@ variable "s3_bucket_name" {
   description = "Name of the S3 bucket where the scripts are located"
   type        = string
 }
+
+# EPM agent install variables
+variable "epm_installer_s3_key" {
+  description = "S3 object key (within s3_bucket_name) of the EPM agent installer RPM, e.g. installers/epm-rhel9.x86_64.rpm."
+  type        = string
+}
+
+variable "epm_installation_key" {
+  description = "EPM installation key tied to the EPM set the agent should register with. Passed to scripts/03_install_epm.sh via the EPM_INSTALLATION_KEY env var."
+  type        = string
+  sensitive   = true
+}
