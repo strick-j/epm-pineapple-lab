@@ -189,7 +189,7 @@ variable "s3_bucket_name" {
 
 # EPM agent install variables
 variable "epm_installer_s3_key" {
-  description = "S3 object key (within s3_bucket_name) of the EPM agent installer RPM, e.g. installers/epm-rhel9.x86_64.rpm."
+  description = "S3 object key (within s3_bucket_name) of the EPM agent installer tarball as downloaded from the CyberArk EPM Download Center. Tarball must contain CyberArkEPMAgentSetupLinux.config and epm-rhel9.x86_64.rpm (covers RHEL 9/10, Oracle Linux 9, Amazon Linux 2023, Rocky Linux 9). A bare .rpm is also accepted. Example: installers/epm-linux.tar.gz."
   type        = string
 }
 
