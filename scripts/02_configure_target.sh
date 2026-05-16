@@ -256,7 +256,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Check for required tools
-for cmd in aws jq curl; do
+for cmd in aws jq curl openssl od sed tee base64; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     log_error "${cmd} not installed"
     exit 1
@@ -281,16 +281,33 @@ IMDS_TOKEN_URL="http://169.254.169.254/latest/api/token"
 IMDS_URL="http://169.254.169.254/latest/"
 IMDS_URL+="meta-data/iam/security-credentials/${AWS_ROLE_NAME}"
 # Retrieve IAM information from IMDS to be used in STS signing request
-log "Requesting AWS credentials from IMDS URL: ${IMDS_TOKEN_URL}"
-TOKEN=$(curl -sS -X PUT "${IMDS_TOKEN_URL}" \
-  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-log "Requesting AWS credentials from IMDS URL: ${IMDS_URL}"
-METADATACREDS=$(curl -sS -H "X-aws-ec2-metadata-token: ${TOKEN}" \
-  "${IMDS_URL}")
+log "Requesting IMDSv2 token from ${IMDS_TOKEN_URL}"
+if ! TOKEN=$(curl -sS -f -X PUT "${IMDS_TOKEN_URL}" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null) || [[ -z "$TOKEN" ]]; then
+  log_error "Failed to fetch IMDSv2 token from ${IMDS_TOKEN_URL} (IMDS unreachable, or IMDSv2 not supported on this instance)"
+  exit 1
+fi
+
+log "Requesting IAM credentials from ${IMDS_URL}"
+if ! METADATACREDS=$(curl -sS -f -H "X-aws-ec2-metadata-token: ${TOKEN}" \
+  "${IMDS_URL}" 2>/dev/null) || [[ -z "$METADATACREDS" ]]; then
+  log_error "Failed to fetch IAM credentials from ${IMDS_URL} (no instance profile attached, or AWS_ROLE_NAME='${AWS_ROLE_NAME}' is wrong)"
+  exit 1
+fi
+
 log "Parsing credentials from IMDS..."
-ACCESS_KEY=$(jq -r '.AccessKeyId' <<<${METADATACREDS})
-SECRET_KEY=$(jq -r '.SecretAccessKey' <<<${METADATACREDS})
-SESSION_TOKEN=$(jq -r '.Token' <<<${METADATACREDS})
+ACCESS_KEY=$(jq -re '.AccessKeyId' <<<"$METADATACREDS") || {
+  log_error "Could not parse AccessKeyId from IMDS response (instance profile missing or AWS_ROLE_NAME='${AWS_ROLE_NAME}' wrong?)"
+  exit 1
+}
+SECRET_KEY=$(jq -re '.SecretAccessKey' <<<"$METADATACREDS") || {
+  log_error "Could not parse SecretAccessKey from IMDS response"
+  exit 1
+}
+SESSION_TOKEN=$(jq -re '.Token' <<<"$METADATACREDS") || {
+  log_error "Could not parse session Token from IMDS response"
+  exit 1
+}
 log "Validating AWS Credentials"
 
 # Verifiy Access Key, Secret Key, and Token are valid
@@ -362,8 +379,6 @@ log "==========================================="
 # Conjur Configuration
 CONJUR_ACCOUNT="conjur"
 CONJUR_URL="https://${PLATFORM_TENANT_NAME}.secretsmgr.cyberark.cloud/api"
-SERVICE_ID="${SERVICE_ID}"
-HOST_ID="${HOST_ID}"
 CONJUR_KIND="variable"
 
 # Payload using AWS Signed Auth Headers and Session Token
@@ -383,17 +398,20 @@ ENCODED_HOST_ID=$(urlencode "$HOST_ID")
 CONJUR_PATH+="/${ENCODED_HOST_ID}/authenticate"
 
 # Attempt Conjur Authentication
-CONJUR_AUTH_RESPONSE=$(curl -s -w "\n%{http_code}" \
+if ! CONJUR_AUTH_RESPONSE=$(curl -sS -w "\n%{http_code}" \
   -H "content-type: application/json" \
   -H "accept-encoding: base64" \
   -d "${JSON_PAYLOAD}" \
-  "${CONJUR_URL}/${CONJUR_PATH}")
+  "${CONJUR_URL}/${CONJUR_PATH}"); then
+  log_error "Failed to reach Conjur at ${CONJUR_URL}"
+  exit 1
+fi
 
 # Extract HTTP status code (last line)
-HTTP_CODE=$(echo "$CONJUR_AUTH_RESPONSE" | tail -n1)
-CONJUR_TOKEN=$(sed '$d' <<< "$CONJUR_AUTH_RESPONSE")
+HTTP_CODE=$(tail -n1 <<<"$CONJUR_AUTH_RESPONSE")
+CONJUR_TOKEN=$(sed '$d' <<<"$CONJUR_AUTH_RESPONSE")
 
-http_response $HTTP_CODE $CONJUR_TOKEN
+http_response "$HTTP_CODE" "$CONJUR_TOKEN"
 log "Conjur Token (encoded): ${CONJUR_TOKEN:0:50}..."
 
 # URL encode the variable identifier
@@ -434,19 +452,26 @@ log "Attempting Platform Auth"
 IDENTITY_URL="https://${IDENTITY_TENANT_ID}.id.cyberark.cloud"
 PLATFORM_TOKEN_URL="${IDENTITY_URL}/oauth2/platformtoken"
 log "Requesting Oauth Token from ${PLATFORM_TOKEN_URL}"
-PLATFORM_RESPONSE=$(curl -sS -w "\n%{http_code}" \
+if ! PLATFORM_RESPONSE=$(curl -sS -w "\n%{http_code}" \
   -X POST "$PLATFORM_TOKEN_URL" \
   -H "Accept: application/json" \
   -F "grant_type=client_credentials" \
   -F "client_id=${CLIENT_ID}" \
-  -F "client_secret=${CLIENT_SECRET}")
+  -F "client_secret=${CLIENT_SECRET}"); then
+  log_error "Failed to reach Identity platform token endpoint at ${PLATFORM_TOKEN_URL}"
+  exit 1
+fi
 
 HTTP_CODE=$(tail -n1 <<<"${PLATFORM_RESPONSE}")
 BODY=$(sed '$d' <<<"${PLATFORM_RESPONSE}")
 
-http_response $HTTP_CODE $BODY
+http_response "$HTTP_CODE" "$BODY"
 
 PLATFORM_TOKEN=$(jq -r '.access_token // empty' <<<"$BODY")
+if [[ -z "$PLATFORM_TOKEN" ]]; then
+  log_error "Platform token response did not contain 'access_token' (body: ${BODY:0:200})"
+  exit 1
+fi
 log "Parsed access_token: ${PLATFORM_TOKEN:0:50}..."
 
 # Construct SIA script retreival URL and request configuration script
@@ -467,23 +492,35 @@ http_response "$SETUP_HTTP_CODE" "$SETUP_RESPONSE"
 base64_payload=$(jq -r '.base64_cmd' <<<"$SETUP_RESPONSE")
 if [[ -z "$base64_payload" || "$base64_payload" == "null" ]]; then
   log_error "No 'base64_cmd' returned in setup response"
-  exit 3
+  exit 1
 fi
 
 SETUP_LOG="${LOG_DIR}/setup_script.log"
 bash_cmd=$(echo "$base64_payload" | base64 --decode)
-log "Executing decoded setup script"
-eval "$bash_cmd" | tee -a ${SETUP_LOG}
+log "Executing decoded setup script (output in ${SETUP_LOG})"
+# Temporarily disable -e so a failing setup script doesn't bypass logout +
+# check_installation_completed below — that's the authoritative success signal.
+set +e
+eval "$bash_cmd" | tee -a "${SETUP_LOG}"
+EVAL_EXIT=${PIPESTATUS[0]}
+set -e
+if [[ $EVAL_EXIT -ne 0 ]]; then
+  log_error "Decoded setup script exited with status ${EVAL_EXIT}; check ${SETUP_LOG} for details"
+fi
 
-# Invalidate token
+# Invalidate token. Logout is best-effort cleanup — failures here are logged
+# but never fatal (we don't want to mask an otherwise-successful install).
 log "Logging out of Identity Platform"
-LOGOUT=$(curl -sS -X POST "${IDENTITY_URL}/security/logout" \
-  -H "Authorization: Bearer ${PLATFORM_TOKEN}" -d "{}")
-LOGOUT_SUCCESS=$(jq -r '.success' <<<${LOGOUT})
-if $LOGOUT_SUCCESS; then
-  log "Successfully logged out of Identity Platform"
+if LOGOUT=$(curl -sS -X POST "${IDENTITY_URL}/security/logout" \
+  -H "Authorization: Bearer ${PLATFORM_TOKEN}" -d "{}" 2>/dev/null); then
+  LOGOUT_SUCCESS=$(jq -r '.success // false' <<<"${LOGOUT}" 2>/dev/null || echo "false")
+  if [[ "$LOGOUT_SUCCESS" == "true" ]]; then
+    log "Successfully logged out of Identity Platform"
+  else
+    log_error "Logout returned unexpected response (continuing): ${LOGOUT:0:200}"
+  fi
 else
-  log_error "Failed to logout of Identity Platform"
+  log_error "Failed to call logout endpoint at ${IDENTITY_URL}/security/logout (continuing)"
 fi
 
 check_installation_completed "${SETUP_LOG}"

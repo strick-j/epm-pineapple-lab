@@ -29,13 +29,16 @@ log_error() {
 
 # Check if script is run as root
 if [[ $EUID -ne 0 ]]; then
-   echo "Error: This script must be run as root or with sudo" 
+   echo "Error: This script must be run as root or with sudo" >&2
    exit 1
 fi
 
 # Create log directory if it doesn't exist
-mkdir -p "$LOG_DIR"
-chmod 755 "$LOG_DIR"
+if ! mkdir -p "$LOG_DIR"; then
+    echo "Error: Failed to create log directory $LOG_DIR" >&2
+    exit 1
+fi
+chmod 755 "$LOG_DIR" 2>/dev/null || true
 
 log "=========================================="
 log "Hostname setup script started"
