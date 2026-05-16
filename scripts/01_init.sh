@@ -85,76 +85,98 @@ log "Requested hostname: $NEW_HOSTNAME"
 CURRENT_HOSTNAME=$(hostname)
 log "Current hostname: $CURRENT_HOSTNAME"
 
+SKIP_HOSTNAME=false
 if [ "$CURRENT_HOSTNAME" == "$NEW_HOSTNAME" ] && [ "$FORCE" != true ]; then
-    log "Hostname is already set to $NEW_HOSTNAME. No changes needed."
-    log "Use --force flag to override this check."
-    echo "Hostname is already set to $NEW_HOSTNAME"
-    echo "No changes were made. Use --force to override."
-    exit 0
-fi
-
-if [ "$CURRENT_HOSTNAME" == "$NEW_HOSTNAME" ] && [ "$FORCE" == true ]; then
+    log "Hostname is already set to $NEW_HOSTNAME. Skipping hostname changes (use --force to re-apply)."
+    SKIP_HOSTNAME=true
+elif [ "$CURRENT_HOSTNAME" == "$NEW_HOSTNAME" ] && [ "$FORCE" == true ]; then
     log "Hostname already set to $NEW_HOSTNAME but --force flag provided. Proceeding anyway."
 fi
 
-log "Proceeding with hostname change from '$CURRENT_HOSTNAME' to '$NEW_HOSTNAME'"
+if [ "$SKIP_HOSTNAME" != true ]; then
+    log "Proceeding with hostname change from '$CURRENT_HOSTNAME' to '$NEW_HOSTNAME'"
 
-# Set the hostname using hostnamectl (systemd method)
-log "Setting hostname using hostnamectl..."
-if hostnamectl set-hostname "$NEW_HOSTNAME"; then
-    log "Successfully set hostname using hostnamectl"
-else
-    log_error "Failed to set hostname using hostnamectl"
+    # Set the hostname using hostnamectl (systemd method)
+    log "Setting hostname using hostnamectl..."
+    if hostnamectl set-hostname "$NEW_HOSTNAME"; then
+        log "Successfully set hostname using hostnamectl"
+    else
+        log_error "Failed to set hostname using hostnamectl"
+        exit 1
+    fi
+
+    # Update /etc/hostname
+    log "Updating /etc/hostname..."
+    if echo "$NEW_HOSTNAME" > /etc/hostname; then
+        log "Successfully updated /etc/hostname"
+    else
+        log_error "Failed to update /etc/hostname"
+        exit 1
+    fi
+
+    # Update /etc/hosts to ensure proper hostname resolution.
+    # RHEL convention: hostname is appended as an alias on the existing 127.0.0.1
+    # line (the Debian/Ubuntu 127.0.1.1 convention is not used on RHEL).
+    log "Updating /etc/hosts..."
+    if grep -qE "^127\.0\.0\.1[[:space:]].*(^|[[:space:]])${NEW_HOSTNAME}([[:space:]]|$)" /etc/hosts; then
+        log "${NEW_HOSTNAME} already present on the 127.0.0.1 line; /etc/hosts unchanged"
+    elif grep -qE "^127\.0\.0\.1[[:space:]]" /etc/hosts; then
+        if sed -i -E "/^127\.0\.0\.1[[:space:]]/ s/\$/ ${NEW_HOSTNAME}/" /etc/hosts; then
+            log "Appended ${NEW_HOSTNAME} to the 127.0.0.1 line in /etc/hosts"
+        else
+            log_error "Failed to update /etc/hosts"
+            exit 1
+        fi
+    else
+        # No 127.0.0.1 line at all (very unusual on RHEL) — create one.
+        if echo "127.0.0.1 localhost ${NEW_HOSTNAME}" >> /etc/hosts; then
+            log "Created 127.0.0.1 line with ${NEW_HOSTNAME} in /etc/hosts"
+        else
+            log_error "Failed to write /etc/hosts"
+            exit 1
+        fi
+    fi
+
+    # Verify the change
+    FINAL_HOSTNAME=$(hostname)
+    FINAL_FQDN=$(hostname -f 2>/dev/null || echo 'Not set')
+    log "Hostname change completed successfully"
+    log "Final hostname: $FINAL_HOSTNAME"
+    log "Final FQDN: $FINAL_FQDN"
+fi
+
+# ---------------------------------------------------------
+# Install nginx
+# ---------------------------------------------------------
+# Runs unconditionally so a re-invocation where the hostname is already
+# correct still ensures nginx is installed and active. `dnf install -y`
+# is a no-op if nginx is already at the latest available version, and
+# `systemctl enable --now` is idempotent.
+log "Ensuring nginx is installed and running"
+if ! dnf install -y nginx >>"$LOG_FILE" 2>&1; then
+    log_error "Failed to install nginx via dnf"
     exit 1
 fi
 
-# Update /etc/hostname
-log "Updating /etc/hostname..."
-if echo "$NEW_HOSTNAME" > /etc/hostname; then
-    log "Successfully updated /etc/hostname"
-else
-    log_error "Failed to update /etc/hostname"
+if ! systemctl enable --now nginx >>"$LOG_FILE" 2>&1; then
+    log_error "Failed to enable/start nginx service"
     exit 1
 fi
 
-# Update /etc/hosts to ensure proper hostname resolution.
-# RHEL convention: hostname is appended as an alias on the existing 127.0.0.1
-# line (the Debian/Ubuntu 127.0.1.1 convention is not used on RHEL).
-log "Updating /etc/hosts..."
-if grep -qE "^127\.0\.0\.1[[:space:]].*(^|[[:space:]])${NEW_HOSTNAME}([[:space:]]|$)" /etc/hosts; then
-    log "${NEW_HOSTNAME} already present on the 127.0.0.1 line; /etc/hosts unchanged"
-elif grep -qE "^127\.0\.0\.1[[:space:]]" /etc/hosts; then
-    if sed -i -E "/^127\.0\.0\.1[[:space:]]/ s/\$/ ${NEW_HOSTNAME}/" /etc/hosts; then
-        log "Appended ${NEW_HOSTNAME} to the 127.0.0.1 line in /etc/hosts"
-    else
-        log_error "Failed to update /etc/hosts"
-        exit 1
-    fi
+if systemctl is-active --quiet nginx; then
+    log "nginx service is active"
 else
-    # No 127.0.0.1 line at all (very unusual on RHEL) — create one.
-    if echo "127.0.0.1 localhost ${NEW_HOSTNAME}" >> /etc/hosts; then
-        log "Created 127.0.0.1 line with ${NEW_HOSTNAME} in /etc/hosts"
-    else
-        log_error "Failed to write /etc/hosts"
-        exit 1
-    fi
+    log_error "nginx service is not active after install"
+    systemctl status nginx --no-pager >>"$LOG_FILE" 2>&1 || true
+    exit 1
 fi
 
-# Verify the change
-FINAL_HOSTNAME=$(hostname)
-FINAL_FQDN=$(hostname -f 2>/dev/null || echo 'Not set')
-
-log "Hostname change completed successfully"
-log "Final hostname: $FINAL_HOSTNAME"
-log "Final FQDN: $FINAL_FQDN"
 log "=========================================="
 
 echo ""
-echo "✓ Hostname has been set successfully!"
-echo "Current hostname: $FINAL_HOSTNAME"
-echo "FQDN: $FINAL_FQDN"
+echo "✓ Init complete."
+echo "Hostname: $(hostname)"
+echo "nginx:    $(systemctl is-active nginx 2>/dev/null || echo unknown)"
 echo ""
-echo "Note: The hostname change is effective immediately."
-echo "You may need to restart your shell or logout/login to see the updated prompt."
-echo ""
+echo "Log file: $LOG_FILE"
 echo "Log file: $LOG_FILE"
