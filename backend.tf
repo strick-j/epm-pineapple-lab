@@ -1,8 +1,8 @@
 terraform {
   backend "s3" {
-    bucket       = "REPLACE_ME-tfstate"
-    key          = "epm-pineapple-lab/terraform.tfstate"
-    region       = "us-east-1"
+    bucket       = "pineapple.dev"
+    key          = "terraform/epm-lab.tfstate"
+    region       = "us-east-2"
     encrypt      = true
     use_lockfile = true
   }

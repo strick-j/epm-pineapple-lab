@@ -72,10 +72,55 @@ resource "aws_instance" "rhel" {
   instance_type               = var.instance_type
   subnet_id                   = var.subnet_id
   vpc_security_group_ids      = concat([aws_security_group.rhel.id], var.extra_security_group_ids)
-  key_name                    = var.key_pair_name
   iam_instance_profile        = var.iam_instance_profile
+  key_name                    = var.key_pair_name
   associate_public_ip_address = false
-  user_data                   = var.user_data
+
+  user_data = <<-EOF
+#!/bin/bash -xe
+
+# Security updates only — avoid pulling unrelated kernel/feature updates on first boot
+dnf update -y --security
+
+# Dependencies needed by /opt/sia/*.sh
+dnf install -y unzip jq
+
+# AWS CLI v2 (stock RHEL 9 repos don't ship an aws-cli package)
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/aws /tmp/awscliv2.zip
+
+# Export variables for scripts
+export IDENTITY_TENANT_ID="${var.identity_tenant_id}"
+export PLATFORM_TENANT_NAME="${var.platform_tenant_name}"
+export WORKSPACE_ID="${var.workspace_id}"
+export WORKSPACE_TYPE="${var.workspace_type}"
+export AWS_ROLE_NAME="${var.aws_role_name}"
+export SERVICE_ID="${var.service_id}"
+export HOST_ID="${var.host_id}"
+export USERNAME_VARIABLE="${var.username_variable}"
+export PASSWORD_VARIABLE="${var.password_variable}"
+
+# EPM agent install
+export EPM_INSTALLER_S3_URI="s3://${var.s3_bucket_name}/${var.epm_installer_s3_key}"
+export EPM_INSTALLATION_KEY="${var.epm_installation_key}"
+
+SSHD_DIR=/var/run/sshd
+SCRIPTS_DIR=/opt/sia
+mkdir -p "$SCRIPTS_DIR"
+mkdir -p "$SSHD_DIR"
+
+aws s3 cp s3://${var.s3_bucket_name}/scripts "$SCRIPTS_DIR" --recursive
+
+# make scripts executable
+chmod +x "$SCRIPTS_DIR"/*.sh
+
+# run them
+"$SCRIPTS_DIR/01_init.sh" "${each.key}"
+"$SCRIPTS_DIR/02_configure_target.sh"
+"$SCRIPTS_DIR/03_install_epm.sh"
+EOF
 
   root_block_device {
     volume_size           = var.root_volume_size_gb
@@ -93,7 +138,13 @@ resource "aws_instance" "rhel" {
 
   tags = merge(
     var.common_tags,
-    { Name = each.key },
+    {
+      Name               = each.key
+      Team               = var.team_name
+      AssetOwner         = var.asset_owner_name
+      iScheduler         = var.iScheduler
+      iCreator_CreatorBy = var.iCreator_CreatorBy
+    },
   )
 
   # Don't replace running instances when Red Hat publishes a newer AMI.

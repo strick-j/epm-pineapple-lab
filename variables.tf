@@ -18,6 +18,76 @@ variable "key_pair_name" {
   type        = string
 }
 
+variable "team_name" {
+  description = "Name of the team for tagging purposes"
+  type        = string
+}
+
+# Resource Tag Variables
+variable "asset_owner_name" {
+  description = "Name of the human that the cloud team can contact with questions"
+  type        = string
+}
+
+variable "iScheduler" {
+  description = "iScheduler tag value"
+  type        = string
+}
+
+variable "iCreator_CreatorBy" {
+  description = "iCreator_CreatorBy tag value"
+  type        = string
+}
+
+# Generic variables for the CyberArk ISPSS Platform
+variable "platform_tenant_name" {
+  description = "Platform tenant name for Identity Tenant (e.g. subdomain)"
+  type        = string
+}
+
+variable "identity_tenant_id" {
+  description = "Identity tenant ID for Identity Authentication (e.g. abc12345)"
+  type        = string
+}
+
+# Variables below are used to authenticate and retrieve 
+# credentials from Conjur Cloud.
+variable "service_id" {
+  description = "Service ID for Conjur Authentication configuration"
+  type        = string
+}
+
+variable "aws_role_name" {
+  description = "AWS role name for the EC2 instance"
+  type        = string
+}
+
+variable "host_id" {
+  description = "Host ID for Conjur Authentication configuration"
+  type        = string
+}
+
+variable "username_variable" {
+  description = "Username variable for Conjur retrieval"
+  type        = string
+}
+
+variable "password_variable" {
+  description = "Password variable for Conjur retrieval"
+  type        = string
+}
+
+# SIA specific variables
+variable "workspace_id" {
+  description = "Workspace ID for SIA configuration"
+  type        = string
+}
+
+variable "workspace_type" {
+  description = "Workspace type for SIA configuration"
+  type        = string
+}
+
 variable "rhel_major_version" {
   description = "RHEL major version to look up. Only 8 or 9 are supported."
   type        = string
@@ -109,4 +179,22 @@ variable "user_data" {
   description = "Optional cloud-init / user-data string. Passed verbatim if non-empty."
   type        = string
   default     = ""
+}
+
+# CyberArk variables
+variable "s3_bucket_name" {
+  description = "Name of the S3 bucket where the scripts are located"
+  type        = string
+}
+
+# EPM agent install variables
+variable "epm_installer_s3_key" {
+  description = "S3 object key (within s3_bucket_name) of the EPM agent installer tarball as downloaded from the CyberArk EPM Download Center. Tarball must contain CyberArkEPMAgentSetupLinux.config and epm-rhel9.x86_64.rpm (covers RHEL 9/10, Oracle Linux 9, Amazon Linux 2023, Rocky Linux 9). A bare .rpm is also accepted. Example: installers/epm-linux.tar.gz."
+  type        = string
+}
+
+variable "epm_installation_key" {
+  description = "EPM installation key tied to the EPM set the agent should register with. Passed to scripts/03_install_epm.sh via the EPM_INSTALLATION_KEY env var."
+  type        = string
+  sensitive   = true
 }
