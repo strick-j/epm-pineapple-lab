@@ -183,15 +183,17 @@ case "$INSTALLER_BASENAME" in
     ;;
 esac
 
-# Locate the RHEL 9 RPM and the config file inside the extracted payload.
-RPM_FILE=$(find "$EXTRACT_DIR" -maxdepth 4 -type f -name 'epm-rhel9.x86_64.rpm' | head -n1)
+# Locate the RHEL RPM and the config file inside the extracted payload.
+# Match `epm-rhel<digits>.x86_64.rpm` case-insensitively — CyberArk has shipped
+# kits with `RHEL` uppercased, and the same RPM covers future RHEL majors.
+RPM_FILE=$(find "$EXTRACT_DIR" -maxdepth 4 -type f -regextype posix-extended -iregex '.*/epm-rhel[0-9]+\.x86_64\.rpm' | head -n1)
 if [[ -z "$RPM_FILE" ]]; then
-  log_error "No epm-rhel9.x86_64.rpm found in installer payload at ${EXTRACT_DIR}"
+  log_error "No epm-rhel<N>.x86_64.rpm (case-insensitive) found in installer payload at ${EXTRACT_DIR}"
   exit 1
 fi
 log "Found RPM: ${RPM_FILE}"
 
-CONFIG_FILE=$(find "$EXTRACT_DIR" -maxdepth 4 -type f -name 'CyberArkEPMAgentSetupLinux.config' | head -n1)
+CONFIG_FILE=$(find "$EXTRACT_DIR" -maxdepth 4 -type f -iname 'CyberArkEPMAgentSetupLinux.config' | head -n1)
 if [[ -n "$CONFIG_FILE" ]]; then
   log "Found config: ${CONFIG_FILE}"
 else
