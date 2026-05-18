@@ -183,14 +183,24 @@ case "$INSTALLER_BASENAME" in
     ;;
 esac
 
-# Locate the RHEL RPM and the config file inside the extracted payload.
-# Match `epm-rhel<digits>.x86_64.rpm` case-insensitively — CyberArk has shipped
-# kits with `RHEL` uppercased, and the same RPM covers future RHEL majors.
-RPM_FILE=$(find "$EXTRACT_DIR" -maxdepth 4 -type f -regextype posix-extended -iregex '.*/epm-rhel[0-9]+\.x86_64\.rpm' | head -n1)
-if [[ -z "$RPM_FILE" ]]; then
-  log_error "No epm-rhel<N>.x86_64.rpm (case-insensitive) found in installer payload at ${EXTRACT_DIR}"
+# Locate the RPM and config file inside the extracted payload.
+# CyberArk's EPM kit ships exactly one .rpm; their docs note the same RPM covers
+# RHEL 9/10, Oracle Linux 9, Amazon Linux 2023, and Rocky Linux 9. Filenames
+# have varied (case of "RHEL", presence of version suffixes), so just find any
+# .rpm in the kit rather than trying to match a specific naming convention.
+mapfile -t RPM_CANDIDATES < <(find "$EXTRACT_DIR" -maxdepth 4 -type f -iname '*.rpm')
+if [[ ${#RPM_CANDIDATES[@]} -eq 0 ]]; then
+  log_error "No .rpm file found in installer payload at ${EXTRACT_DIR}"
+  log_error "Extracted contents (for debugging):"
+  find "$EXTRACT_DIR" -maxdepth 4 -mindepth 1 2>&1 | tee -a "$LOG_FILE" >&2 || true
   exit 1
 fi
+if [[ ${#RPM_CANDIDATES[@]} -gt 1 ]]; then
+  log_error "Expected exactly one .rpm in installer payload, found ${#RPM_CANDIDATES[@]}:"
+  printf '  %s\n' "${RPM_CANDIDATES[@]}" | tee -a "$LOG_FILE" >&2
+  exit 1
+fi
+RPM_FILE="${RPM_CANDIDATES[0]}"
 log "Found RPM: ${RPM_FILE}"
 
 CONFIG_FILE=$(find "$EXTRACT_DIR" -maxdepth 4 -type f -iname 'CyberArkEPMAgentSetupLinux.config' | head -n1)
