@@ -215,7 +215,7 @@ check_installation_completed() {
     local last_line=$(tail -n 1 "$FILE")
     
     # Check if last line contains "Installation Completed"
-    if [[ "$last_line" == "Installation Completed" ]]; then
+    if [[ "$last_line" == "Deployment completed successfully." ]]; then
         log "✓ Installation completed successfully"
         return 0
     else
