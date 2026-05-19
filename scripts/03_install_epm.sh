@@ -257,19 +257,36 @@ shred_and_rm "$KEY_FILE"
 # ---------------------------------------------------------
 # 5. Verify
 # ---------------------------------------------------------
+# After --activate, the cyberark-epm service starts asynchronously and
+# epmcli --status races ahead of it, returning an "unexpected" result.
+# Poll systemctl is-active before the status check, then settle briefly
+# so the daemon finishes initializing before we ask it anything.
+log "Waiting for cyberark-epm.service to become active (timeout 60s)"
+SERVICE_UP=false
+for attempt in $(seq 1 30); do
+  if systemctl is-active --quiet cyberark-epm; then
+    SERVICE_UP=true
+    log "cyberark-epm.service is active (after ~$((attempt * 2))s)"
+    break
+  fi
+  sleep 2
+done
+
+if ! $SERVICE_UP; then
+  log_error "cyberark-epm service did not become active within 60s"
+  systemctl status cyberark-epm --no-pager >>"$LOG_FILE" 2>&1 || true
+  exit 1
+fi
+
+# Brief settle window — service is "active" but the daemon may still be
+# initializing internal state that epmcli --status queries.
+sleep 5
+
 log "Running epmcli --status"
 if ! "$EPMCLI" --status >>"$LOG_FILE" 2>&1; then
   log_error "epmcli --status reported a non-zero exit"
   exit 1
 fi
-
-log "Checking cyberark-epm.service"
-if ! systemctl is-active --quiet cyberark-epm; then
-  log_error "cyberark-epm service is not active after install"
-  systemctl status cyberark-epm --no-pager >>"$LOG_FILE" 2>&1 || true
-  exit 1
-fi
-log "cyberark-epm.service is active"
 
 # ---------------------------------------------------------
 # 6. Done
